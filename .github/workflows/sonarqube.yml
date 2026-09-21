@@ -1,0 +1,80 @@
+name: SonarQube SAST
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    name: Analyze .NET solution
+    if: >-
+      github.event_name != 'pull_request' ||
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: true
+      DOTNET_NOLOGO: true
+      SONAR_ORGANIZATION: ${{ vars.SONAR_ORGANIZATION }}
+      SONAR_PROJECT_KEY: ${{ vars.SONAR_PROJECT_KEY }}
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Validate SonarQube configuration
+        run: |
+          test -n "${SONAR_PROJECT_KEY}" || { echo "::error::Missing repository variable SONAR_PROJECT_KEY"; exit 1; }
+          test -n "${SONAR_ORGANIZATION}" || { echo "::error::Missing repository variable SONAR_ORGANIZATION"; exit 1; }
+          test -n "${SONAR_TOKEN}" || { echo "::error::Missing repository secret SONAR_TOKEN"; exit 1; }
+
+      - name: Restore tools and dependencies
+        run: |
+          dotnet tool restore
+          dotnet restore SecurePim.slnx
+
+      - name: Begin SonarQube analysis
+        run: >-
+          dotnet sonarscanner begin
+          /k:"${SONAR_PROJECT_KEY}"
+          /o:"${SONAR_ORGANIZATION}"
+          /d:sonar.host.url="https://sonarcloud.io"
+          /d:sonar.token="${SONAR_TOKEN}"
+          /d:sonar.qualitygate.wait=true
+          /d:sonar.qualitygate.timeout=300
+          /d:sonar.cs.vstest.reportsPaths="**/*.trx"
+          /d:sonar.cs.opencover.reportsPaths="**/coverage.opencover.xml"
+
+      - name: Build
+        run: dotnet build SecurePim.slnx --configuration Release --no-restore
+
+      - name: Test with coverage
+        run: >-
+          dotnet test SecurePim.slnx
+          --configuration Release
+          --no-build
+          --logger trx
+          --results-directory TestResults
+          --collect:"XPlat Code Coverage"
+          --
+          DataCollectionRunSettings.DataCollectors.DataCollector.Configuration.Format=opencover
+
+      - name: Complete SonarQube analysis
+        run: dotnet sonarscanner end /d:sonar.token="${SONAR_TOKEN}"
