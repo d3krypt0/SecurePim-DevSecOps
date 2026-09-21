@@ -23,6 +23,4 @@ app.UseAuthorization();
 app.MapHealthChecks("/health");
 app.MapProductEndpoints();
 
-app.Run();
-
-public partial class Program;
+await app.RunAsync();

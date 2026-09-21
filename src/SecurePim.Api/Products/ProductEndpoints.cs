@@ -50,10 +50,13 @@ public static class ProductEndpoints
                 });
             }
 
-            logger.ProductCreated(
-                product.Id,
-                user.FindFirst("sub")!.Value,
-                tenantId);
+            if (logger.IsEnabled(LogLevel.Information))
+            {
+                logger.ProductCreated(
+                    product.Id,
+                    user.FindFirst("sub")!.Value,
+                    tenantId);
+            }
 
             return Results.Created(
                 $"/api/products/{product.Id}",
